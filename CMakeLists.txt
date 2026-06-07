@@ -1,11 +1,9 @@
 cmake_minimum_required(VERSION 3.20.0)
-
-# Pull in the Zephyr build system
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(protocol_analyzer)
 
-project(ble_keyboard)
+target_sources(app PRIVATE src/main.c)
 
-# Tell CMake to compile your main.c file
-target_sources(app PRIVATE 
-    src/main.c 
-)
+# Conditionally compile based on Kconfig
+zephyr_sources_ifdef(CONFIG_ENABLE_UART_ANALYZER src/uart.c)
+zephyr_sources_ifdef(CONFIG_ENABLE_I2C_ANALYZER src/i2c.c)
