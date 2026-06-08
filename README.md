@@ -5,6 +5,7 @@ An open-source hardware tool designed to sniff, capture, and display embedded co
 This project is still a  **Work in Progress**. 
 
 * **UART/Serial support added!** The firmware successfully intercepts asynchronous serial data via hardware interrupts and streams the captured data to a local terminal.
+* **I2C support added!** The firmware successfully intercepts I2C Bus and streams the captured data to a local terminal.
 
 ---
 
@@ -12,7 +13,7 @@ This project is still a  **Work in Progress**.
 
 ### Protocol Expansion
 * [x] **UART / Serial:** Hardware interrupts verified against a commercial analyzer.
-* [ ] **I2C:** Implementing passive eavesdropping (bypassing target address restrictions).
+* [x] **I2C:** Implementing passive eavesdropping (bypassing target address restrictions).
 * [ ] **SPI:** High-speed synchronous data capturing.
 * [ ] **Wireless:** Leveraging the ESP32's native radio capabilities for quick wireless packet sniffing.
 
@@ -24,4 +25,4 @@ This project is still a  **Work in Progress**.
 * **The Ground Truth:** A commercial Saleae Logic Analyzer running in parallel to validate data integrity and timing.
 ---
 
-*Note: This repository is a strict Work in Progress (WIP). Firmware architectures, device tree overlays, and schematic files are updated regularly as milestones are achieved.*
+*Note: This repository is a Work in Progress (WIP). Firmware architectures, device tree overlays, and schematic files are updated regularly as milestones are achieved.*
