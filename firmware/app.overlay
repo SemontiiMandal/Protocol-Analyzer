@@ -1,0 +1,13 @@
+// ESP Parallel IO (PARLIO) pins are routed dynamically via hardware_matrix.c 
+
+/ {
+    chosen {
+        // Route Zephyr's console output to USB CDC port
+        zephyr,console = &usb_cdc;
+    };
+};
+
+&usb_cdc {
+    status = "okay";
+};
+
