@@ -1,28 +1,60 @@
-## Protocol Analyzer
-An open-source hardware tool designed to sniff, capture, and display embedded communication protocols in real time. The goal of this project is to create a quick, reliable testing tool for developers who don't have access to expensive commercial protocol analyzers. To ensure maximum accuracy, this firmware is developed and verified in parallel with a professional Salae logic analyzer, matching byte-for-byte on the physical wire.
+# Protocol analyzer
 
-## Current Status
-This project is still a  **Work in Progress**. 
+This is an open-source hardware tool that reads and displays embedded communication protocols. It gives developers a cheap way to test hardware. I test this firmware against a Saleae logic analyzer to make sure the bytes match exactly on the physical wire.
 
-* **UART/Serial support added!** The firmware successfully intercepts asynchronous serial data via hardware interrupts and streams the captured data to a local terminal.
-* **I2C support added!** The firmware successfully intercepts I2C Bus and streams the captured data to a local terminal.
+## Current status
 
----
+The project uses an 8-bit matrix architecture running on Zephyr RTOS.
 
-## Project Roadmap
+* DMA capture records data to a continuous ring buffer without using the CPU.
+* The firmware supports SPI, I2C, UART, and CAN.
+* The ESP32-C6 can route up to 8 pins at the same time to read multiple protocols on one bus.
+* A Python app controls the hardware over a virtual USB CDC connection.
 
-### Protocol Expansion
-* [x] **UART / Serial:** Hardware interrupts verified against a commercial analyzer.
-* [x] **I2C:** Implementing passive eavesdropping (bypassing target address restrictions).
-* [ ] **SPI:** High-speed synchronous data capturing.
-* [ ] **Wireless:** Leveraging the ESP32's native radio capabilities for quick wireless packet sniffing.
+## How it works
 
----
+The firmware processes data in five steps.
 
-## Current Testbench Setup
-* **The Target:** An STM32 Bluepill board broadcasting continuous test patterns.
-* **The Sniffer:** An ESP32 DevKitC running custom Zephyr RTOS firmware to intercept the lines.
-* **The Ground Truth:** A commercial Saleae Logic Analyzer running in parallel to validate data integrity and timing.
----
+1. You send a one-byte ASCII command from the Python app over USB.
+2. The Zephyr USB interrupt catches the command and tells the ESP32-C6 GPIO matrix to route the physical pins into an internal 8-bit parallel bus.
+3. The hardware DMA engine continuously copies data from that bus into a 100 KB SRAM ring buffer. The CPU does not do any of this work.
+4. An RTOS thread reads the ring buffer right behind the DMA write head. It uses bitmasks to separate the 8-bit chunks into specific slots based on the mode you chose.
+5. The isolated bits go into C state machines. These decoders track timing and edges to read the bytes, handle CAN bit-stuffing, calculate CRCs, and send text back to your computer.
 
-*Note: This repository is a Work in Progress (WIP). Firmware architectures, device tree overlays, and schematic files are updated regularly as milestones are achieved.*
+## Project roadmap
+
+## Custom hardware
+I designed a custom printed circuit board (PCB) in Altium Designer to run this logic analyzer.
+
+**Microcontroller**
+
+The board uses the ESP32-C6. I chose this chip for three reasons:
+
+* Parallel IO (PARLIO): The chip can sample 8 pins at the exact same time and dump that data straight into the DMA ring buffer; Current Data Bus is 8 Bit Wide.
+* Native USB: The chip has built-in USB routing. This kept the schematic simple because I did not need an external USB-to-serial converter.
+* Wireless radios: It includes native Wi-Fi and Bluetooth for future wireless sniffing.
+
+**Level shifter**
+
+The ESP32-C6 operates strictly at 3.3V. If you probe a 5V target board, you will destroy the microcontroller. To prevent this, the board includes an SN74LVC8T245 8-bit level shifter. It reads the reference voltage from the target board and safely drops the incoming logic signals down to 3.3V before they reach the ESP32-C6 parallel bus.
+
+**CAN transceiver**
+
+A microcontroller cannot read raw CAN bus signals directly because the differential voltages are too high. The board includes a TCAN1051HV transceiver. It sits between the external probe connector and the ESP32-C6 to convert the raw CAN bus voltages into safe, standard digital logic.
+
+### Protocol expansion
+
+* [x] UART / Serial: Asynchronous time-driven decoding.
+* [x] I2C: Synchronous edge-driven decoding with start and stop conditions.
+* [x] SPI: High-speed synchronous data capture.
+* [x] CAN 2.0: Asynchronous decoding with bit-stuffing removal and CRC-15 verification.
+* [ ] Wireless: Using the ESP32 radio to sniff wireless packets.
+
+## Testbench setup
+
+* Target: Embedded hardware broadcasting test patterns.
+* Sniffer: ESP32-C6 DevKit running Zephyr RTOS.
+* Interface: Python desktop application.
+* Ground truth: Saleae logic analyzer.
+
+*Note: This repository is a work in progress. I am making updates to this weekly!*
