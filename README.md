@@ -24,7 +24,12 @@ The firmware processes data in five steps.
 ## Project roadmap
 
 ## Custom hardware
-I designed a custom printed circuit board (PCB) in Altium Designer to run this logic analyzer.
+I designed a custom printed circuit board (PCB) in Altium Designer to run this logic analyzer. I call it CIPHER!
+
+<img width="236" height="314" alt="image" src="https://github.com/user-attachments/assets/c648626c-3d74-43cc-a0d7-1440084c12c6" />
+<img width="257" height="323" alt="image" src="https://github.com/user-attachments/assets/0844408f-6a54-41da-a868-507184612aad" />
+<img width="245" height="308" alt="image" src="https://github.com/user-attachments/assets/326d12cb-f893-461a-8281-2c52773697d6" />
+
 
 **Microcontroller**
 
