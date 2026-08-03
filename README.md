@@ -2,6 +2,12 @@
 
 This is an open-source hardware tool that reads and displays embedded communication protocols. It gives developers a cheap way to test hardware. I test this firmware against a Saleae logic analyzer to make sure the bytes match exactly on the physical wire.
 
+## Assembled Cypher
+<img width="342" height="512" alt="image" src="https://github.com/user-attachments/assets/5a24ad59-41bc-45e7-9e92-424feee6e0dd" />
+
+*And image showing the assembled Cypher PCB (Printed Circuit Board)*
+
+
 ## Current status
 
 The project uses an 8-bit matrix architecture running on Zephyr RTOS.
@@ -24,7 +30,7 @@ The firmware processes data in five steps.
 ## Project roadmap
 
 ## Custom hardware
-I designed a custom printed circuit board (PCB) in Altium Designer to run this logic analyzer. I call it CIPHER!
+I designed a custom printed circuit board (PCB) in Altium Designer to run this logic analyzer. I call it Cypher!
 
 <img width="236" height="314" alt="image" src="https://github.com/user-attachments/assets/c648626c-3d74-43cc-a0d7-1440084c12c6" />
 <img width="257" height="323" alt="image" src="https://github.com/user-attachments/assets/0844408f-6a54-41da-a868-507184612aad" />
