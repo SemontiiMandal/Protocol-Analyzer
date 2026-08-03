@@ -1,4 +1,4 @@
-# Protocol analyzer
+# Cypher - Protocol analyzer 
 
 This is an open-source hardware tool that reads and displays embedded communication protocols. It gives developers a cheap way to test hardware. I test this firmware against a Saleae logic analyzer to make sure the bytes match exactly on the physical wire.
 
