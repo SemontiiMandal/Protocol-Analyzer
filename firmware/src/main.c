@@ -3,7 +3,7 @@
 
 #include "hardware_matrix.h"
 
-/* --- Subsystem Initializers --- */
+// Subsystem Initializers  
 extern void init_usb_streamer(void);
 extern void init_dma_ring_buffer(void);
 
@@ -18,8 +18,8 @@ int main(void) {
     printk("[SYSTEM] Matrix configured to safe IDLE state.\n");
 
     // Start DMA Capture
-    /* This allocates the 100KB RAM buffer and commands the ESP32-C6's  DMA engine to start the infinite recording loop. From this line orward, the DMA runs completely independently of the CPU.
-     */
+    // This allocates the 100KB RAM buffer and commands the ESP32-C6's  DMA engine to start the infinite recording loop. From this line orward, the DMA runs completely independently of the CPU.
+   
     init_dma_ring_buffer();
 
     printk("[SYSTEM] Boot complete!\n");
