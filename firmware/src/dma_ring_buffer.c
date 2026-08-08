@@ -1,66 +1,92 @@
 #include <zephyr/kernel.h>
-#include "analyzer_types.h"
+#include "analyzer_config.h"
 
-// Hardware headers for DMA 
-#include <hal/dma_types.h>
-#include <hal/gdma_ll.h>
-#include <soc/gdma_struct.h>
+// Hardware headers for ESP32 I2S, DMA, and DPORT Clocks
+#include <soc/i2s_struct.h>
+#include <soc/i2s_reg.h>
+#include <rom/lldesc.h>
+#include <soc/soc.h>
+#include <soc/dport_reg.h>
 
 // RAM block where data is stored
 la_sample_t capture_ram[RING_BUFFER_SAMPLES];
 
-// DMA Linked List Nodes (Must be word-aligned for ESP32)
-__attribute__((aligned(4))) dma_descriptor_t dma_nodes[2];
+// ESP32 DMA descriptor size field is limited to 4095 bytes max per node.
+#define DMA_CHUNK_SIZE 4000
+#define NUM_DMA_NODES ((RING_BUFFER_SAMPLES * sizeof(la_sample_t)) / DMA_CHUNK_SIZE)
 
-// Assuming GDMA Channel 0 is used for PARLIO RX
-#define PARLIO_GDMA_CHANNEL 0
+__attribute__((aligned(4))) lldesc_t dma_nodes[NUM_DMA_NODES];
+
+/*
+ APB clock is 80MHz on classic ESP32. I2S RX sample clock in camera mode is:
+ sample_clk = APB_CLK / clkm_div_num / rx_bck_div_num
+ With clkm_div_num=40 and rx_bck_div_num=1 this gives 80MHz/40 = 2MHz.
+ Tune clkm_div_num for your target sample rate (higher divider = slower rate).
+ clkm_div_a/clkm_div_b are the fractional-divide numerator/denominator; 0/0
+ disables the fractional part and uses an integer divide by clkm_div_num.
+ */
+#define I2S_CLKM_DIV_NUM 40
+#define I2S_BCK_DIV_NUM  1
 
 void init_dma_ring_buffer(void) {
-    
-    // NODE 0: The First Half of RAM
-    dma_nodes[0].buffer = (uint8_t *)&capture_ram[0];
-    dma_nodes[0].dw0.size = (RING_BUFFER_SAMPLES / 2) * sizeof(la_sample_t);
-    dma_nodes[0].dw0.length = dma_nodes[0].dw0.size;
-    dma_nodes[0].dw0.owner = DMA_DESCRIPTOR_BUFFER_OWNER_DMA;
-    dma_nodes[0].dw0.suc_eof = 0;
-    dma_nodes[0].next = &dma_nodes[1]; // Point to Node 1
+    // Build an infinite circular linked list of 4000-byte blocks
+    for (int i = 0; i < NUM_DMA_NODES; i++) {
+        dma_nodes[i].buf = (uint8_t *)&capture_ram[i * (DMA_CHUNK_SIZE / sizeof(la_sample_t))];
+        dma_nodes[i].size = DMA_CHUNK_SIZE;
+        dma_nodes[i].length = DMA_CHUNK_SIZE;
+        dma_nodes[i].owner = 1; // Owned by DMA hardware
+        // Set EOF on every node so in_eof_des_addr updates once per chunk instead of once per full ring lap. This makes get_current_dma_write_index() track live progress instead of jumping once per NUM_DMA_NODES chunks.
+        dma_nodes[i].eof = 1;
 
-    // NODE 1: The Second Half of RAM 
-    dma_nodes[1].buffer = (uint8_t *)&capture_ram[RING_BUFFER_SAMPLES / 2];
-    dma_nodes[1].dw0.size = (RING_BUFFER_SAMPLES / 2) * sizeof(la_sample_t);
-    dma_nodes[1].dw0.length = dma_nodes[1].dw0.size;
-    dma_nodes[1].dw0.owner = DMA_DESCRIPTOR_BUFFER_OWNER_DMA;
-    dma_nodes[1].dw0.suc_eof = 1; // Mark the end of the logical frame
-    dma_nodes[1].next = &dma_nodes[0]; // INFINITE LOOP: Point back to Node 0
+        // Link to the next node, looping back to 0 at the end
+        dma_nodes[i].qe.stqe_next = &dma_nodes[(i + 1) % NUM_DMA_NODES];
+    }
 
-   // Reset DMA channel
-    gdma_ll_rx_reset_channel(&GDMA, PARLIO_GDMA_CHANNEL);
-    
-    // Connect the DMA channel to PARLIO hardware trigger
-    gdma_ll_rx_connect_to_periph(&GDMA, PARLIO_GDMA_CHANNEL, GDMA_TRIG_PERIPH_PARLIO_RX);
-    
-    // Load custom linked list n
-    gdma_ll_rx_set_desc_addr(&GDMA, PARLIO_GDMA_CHANNEL, (uint32_t)&dma_nodes[0]);
-    
-    // Start DMA
-    gdma_ll_rx_start(&GDMA, PARLIO_GDMA_CHANNEL);
-    
-    printk("Hardware DMA Linked List built. Buffer initialized.\n");
+
+    // Enable I2S0 clock using classic DPORT register masks
+    SET_PERI_REG_MASK(DPORT_PERIP_CLK_EN_REG, DPORT_I2S0_CLK_EN);
+    CLEAR_PERI_REG_MASK(DPORT_PERIP_RST_EN_REG, DPORT_I2S0_RST);
+
+    // Reset I2S0 RX & FIFO
+    I2S0.conf.rx_reset = 1;
+    I2S0.conf.rx_reset = 0;
+    I2S0.conf.rx_fifo_reset = 1;
+    I2S0.conf.rx_fifo_reset = 0;
+    I2S0.lc_conf.in_rst = 1;
+    I2S0.lc_conf.in_rst = 0;
+
+    // Configure Camera Internal Master Mode for Testing
+    I2S0.conf.rx_slave_mod = 0;      // Set as MASTER (Internal clock generation)
+    I2S0.conf2.camera_en = 1;        // Enable Camera RX mode
+    I2S0.sample_rate_conf.rx_bits_mod = 8;
+    I2S0.fifo_conf.rx_data_num = 32;
+    I2S0.fifo_conf.dscr_en = 1;      // Enable DMA descriptors
+
+    I2S0.clkm_conf.clka_en = 0;              // use APB clock
+    I2S0.clkm_conf.clkm_div_num = I2S_CLKM_DIV_NUM;
+    I2S0.clkm_conf.clkm_div_a = 0;           
+    I2S0.clkm_conf.clkm_div_b = 0;
+    I2S0.sample_rate_conf.rx_bck_div_num = I2S_BCK_DIV_NUM;
+
+    // Load custom linked list descriptor address into silicon
+    I2S0.in_link.addr = (uint32_t)&dma_nodes[0];
+    I2S0.in_link.start = 1;
+
+    // Start RX DMA
+    I2S0.conf.rx_start = 1;
+
+    printk("ESP32 I2S Multi-Node DMA Initialized & Active.\n");
+    printk("[I2S] sample_clk ~= %u Hz\n", (unsigned)(80000000UL / I2S_CLKM_DIV_NUM / I2S_BCK_DIV_NUM));
 }
 
-// Calculates where DMA is currently writing
 uint32_t get_current_dma_write_index(void) {
-    // &GDMA is the global struct representing the DMA peripheral base address in ESP-IDF.
-    uint32_t current_addr = gdma_ll_rx_get_success_eof_desc_addr(&GDMA, PARLIO_GDMA_CHANNEL);
-    
-    // If the DMA hasn't started yet or returns a null pointer return index 0
-    if (current_addr == 0) {
+
+    lldesc_t *eof_desc = (lldesc_t *)I2S0.in_eof_des_addr;
+
+    if (eof_desc == NULL) {
         return 0;
     }
 
-    // Subtract the start of our array to get the offset in bytes
-    uint32_t offset_bytes = current_addr - (uint32_t)&capture_ram[0];
-    
-    // Divide by size of the sample (1 byte here, as 8-bit bus) to get array index
+    uint32_t offset_bytes = (uint32_t)eof_desc->buf - (uint32_t)&capture_ram[0];
     return offset_bytes / sizeof(la_sample_t);
 }

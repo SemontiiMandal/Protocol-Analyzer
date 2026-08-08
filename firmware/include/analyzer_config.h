@@ -2,8 +2,6 @@
 
 #include <stdint.h>
 
-// Using 8 bit Data Bus Width for ESP32 PARLIO
-#define PARLIO_BUS_WIDTH 8 
 typedef uint8_t la_sample_t;  
 
 // Define depth of the circular buffer.

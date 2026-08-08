@@ -1,6 +1,6 @@
 #include <zephyr/kernel.h>
 #include <stdbool.h>
-#include "analyzer_types.h"
+#include "analyzer_config.h"
 #include "protocol_masks.h"
 #include "hardware_matrix.h"
 
@@ -45,8 +45,10 @@ void parser_thread(void) {
 
             // Process all unread data in the circular buffer
             if (read_index != write_index) {
+
+                // XOR the index by 1 to un-swap the bytes created by the ESP32 I2S DMA
                 
-                la_sample_t snapshot = capture_ram[read_index];
+                la_sample_t snapshot = capture_ram[read_index ^ 1];
                 
                 switch (current_system_mode) {
                     // Protocol modes supported
@@ -88,8 +90,18 @@ void parser_thread(void) {
                 read_index = (read_index + 1) % RING_BUFFER_SAMPLES;
             } 
             else {
-                // Yield so we don't hog the CPU while waiting for the next byte
-                k_yield(); 
+                // k_yield() only hands off to OTHER THREADS AT THE SAME
+                // PRIORITY -- it never lets a lower-priority thread run.
+                // With write_index stuck (the still-open DMA bug), this
+                // loop was spinning here forever at priority 5, which
+                // silently starved every lower-priority thread in the
+                // system (e.g. dummy_stream_thread at priority 6) even
+                // though it looked like an idle "wait for data" yield.
+                // k_msleep() actually blocks this thread and removes it
+                // from the ready queue, so lower-priority threads get to
+                // run during the wait -- and it's also just more correct
+                // for a real "poll every so often" loop than a busy-yield.
+                k_msleep(1);
             }
         }
         
