@@ -9,7 +9,7 @@ import csv
 import sys
 from collections import deque
 
-# Colors per protocol, used consistently across the graph, the data log and legend
+# Colors per protocol, used consistently across the graph, the data log and legend 
 PROTOCOL_COLORS = {
     "SPI": "#00d9ff",
     "I2C": "#ffe135",
@@ -17,15 +17,15 @@ PROTOCOL_COLORS = {
     "CAN": "#ffa500",
 }
 
-RE_SPI_BYTE = re.compile(r"^\[SPI\] MOSI: 0x([0-9A-Fa-f]{2}) \| MISO: 0x([0-9A-Fa-f]{2})$")
-RE_SPI_CS = re.compile(r"^\[SPI\] CS (LOW|HIGH)")
-RE_I2C_BYTE = re.compile(r"^\[I2C\] Byte: 0x([0-9A-Fa-f]{2}) \[(ACK|NACK)\]$")
-RE_I2C_COND = re.compile(r"^\[I2C\] (START|STOP) Condition$")
-RE_UART_BYTE = re.compile(r"^\[UART\] 0x([0-9A-Fa-f]{2}) \('(.+)'\)$")
-RE_UART_ERR = re.compile(r"^\[UART\] ERROR")
+RE_SPI_BYTE = re.compile(r"^(\\d+),\\[SPI\\] MOSI: 0x([0-9A-Fa-f]{2}) \\| MISO: 0x([0-9A-Fa-f]{2})$")
+RE_SPI_CS = re.compile(r"^(\\d+),\\[SPI\\] CS (LOW|HIGH)")
+RE_I2C_BYTE = re.compile(r"^(\\d+),\\[I2C\\] Byte: 0x([0-9A-Fa-f]{2}) \\[(ACK|NACK)\\]$")
+RE_I2C_COND = re.compile(r"^(\\d+),\\[I2C\\] (START|STOP) Condition$")
+RE_UART_BYTE = re.compile(r"^(\\d+),\\[UART\\] 0x([0-9A-Fa-f]{2}) \\('(.+)'\\)$")
+RE_UART_ERR = re.compile(r"^(\\d+),\\[UART\\] ERROR")
 RE_CAN_FRAME = re.compile(
-    r"^\[CAN\] ID: 0x([0-9A-Fa-f]{3}) \| DLC: (\d+) \| "
-    r"Rx CRC: 0x([0-9A-Fa-f]{4}) \| Calc CRC: 0x([0-9A-Fa-f]{4}) \[(VALID|ERROR)\]$"
+    r"^(\\d+),\\[CAN\\] ID: 0x([0-9A-Fa-f]{3}) \\| DLC: (\\d+) \\| "
+    r"Rx CRC: 0x([0-9A-Fa-f]{4}) \\| Calc CRC: 0x([0-9A-Fa-f]{4}) \\[(VALID|ERROR)\\]$"
 )
 
 
@@ -45,7 +45,7 @@ class ProtocolAnalyzerUI:
         self.error_count = 0
         self.capture_start_time = None
 
-        # Graph state: decoded bytes expanded into digital bit samples
+        # Graph state decoded bytes expanded into digital bit samples
         # Each entry is (protocol, bit). This is a digital-style visualization
         # of the decoded data. It is NOT a timing-accurate raw logic capture
         # because the current serial format does not contain timestamps yet, need to iterate further on this
@@ -72,7 +72,7 @@ class ProtocolAnalyzerUI:
                          foreground="#e0e0e0", rowheight=22)
         style.configure("Treeview.Heading", background="#2a2a2a", foreground="white")
 
-        # Top: connection & mode controls
+        # Top connection & mode controls
         control_frame = tk.Frame(self.root, pady=8, padx=10, bg="#1e1e1e")
         control_frame.pack(fill=tk.X)
 
@@ -101,7 +101,7 @@ class ProtocolAnalyzerUI:
         self.mode_combo.pack(side=tk.LEFT, padx=5)
         tk.Button(control_frame, text="Set Mode", command=self.send_mode).pack(side=tk.LEFT, padx=5)
 
-        # --- Capture controls ---
+        #  Capture controls 
         capture_frame = tk.Frame(self.root, pady=4, padx=10, bg="#1e1e1e")
         capture_frame.pack(fill=tk.X)
 
@@ -118,7 +118,7 @@ class ProtocolAnalyzerUI:
         tk.Button(capture_frame, text="Clear All", command=self.clear_all).pack(side=tk.LEFT, padx=15)
         tk.Button(capture_frame, text="Export Log to CSV", command=self.export_csv).pack(side=tk.LEFT, padx=5)
 
-        # --- Notebook: Live View / Data Log / Raw Terminal ---
+        #  Notebook Live View / Data Log / Raw Terminal 
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
@@ -126,7 +126,7 @@ class ProtocolAnalyzerUI:
         self._build_data_log_tab()
         self._build_raw_terminal_tab()
 
-        # --- Status bar ---
+        #  Status bar 
         self.status_var = tk.StringVar(value="Not connected.")
         status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN,
                                anchor=tk.W, bg="#141414", fg="#a0a0a0")
@@ -279,7 +279,7 @@ class ProtocolAnalyzerUI:
                 self.root.after(0, self.log_raw, f"Serial Read Error: {e}")
                 break
 
-    # Line handling: raw log + decoded parsing
+    # Line handling raw log + decoded parsing
     def handle_line(self, line):
         self.log_raw(line)
         self.total_bytes += len(line)
@@ -294,8 +294,8 @@ class ProtocolAnalyzerUI:
             return 0.0
         return time.time() - self.capture_start_time
 
-    def add_log_row(self, protocol, detail, tag=None):
-        t = f"{self.elapsed():.3f}"
+    def add_log_row(self, hw_time_sec, protocol, detail, tag=None):
+        t = f"{hw_time_sec:.6f}"
         row_id = self.log_tree.insert("", tk.END, values=(t, protocol, detail), tags=(tag or protocol,))
         self.log_tree.see(row_id)
         self.log_rows.append((t, protocol, detail))
@@ -316,62 +316,74 @@ class ProtocolAnalyzerUI:
         self.recent_bits.append((protocol, 1 if bit else 0))
 
     def parse_decoded_line(self, line):
+        # SPI
         m = RE_SPI_BYTE.match(line)
         if m:
-            mosi_val = int(m.group(1), 16)
-            miso_val = int(m.group(2), 16)
+            hw_time_sec = int(m.group(1)) / 1_000_000.0
+            mosi_val = int(m.group(2), 16)
+            miso_val = int(m.group(3), 16)
             self.packet_counts["SPI"] += 1
             self._append_byte_bits("SPI", mosi_val)
-            self.add_log_row("SPI", f"MOSI: 0x{m.group(1)} | MISO: 0x{m.group(2)}")
+            self.add_log_row(hw_time_sec, "SPI", f"MOSI: 0x{m.group(2)} | MISO: 0x{m.group(3)}")
             self.draw_graph()
             return
 
         m = RE_SPI_CS.match(line)
         if m:
-            self.add_log_row("SPI", f"CS {m.group(1)}")
+            hw_time_sec = int(m.group(1)) / 1_000_000.0
+            self.add_log_row(hw_time_sec, "SPI", f"CS {m.group(2)}")
             return
 
+        # I2C
         m = RE_I2C_BYTE.match(line)
         if m:
-            val = int(m.group(1), 16)
+            hw_time_sec = int(m.group(1)) / 1_000_000.0
+            val = int(m.group(2), 16)
             self.packet_counts["I2C"] += 1
             self._append_byte_bits("I2C", val)
-            self.add_log_row("I2C", f"Byte: 0x{m.group(1)} [{m.group(2)}]")
+            self.add_log_row(hw_time_sec, "I2C", f"Byte: 0x{m.group(2)} [{m.group(3)}]")
             self.draw_graph()
             return
 
         m = RE_I2C_COND.match(line)
         if m:
-            self.add_log_row("I2C", f"{m.group(1)} Condition")
+            hw_time_sec = int(m.group(1)) / 1_000_000.0
+            self.add_log_row(hw_time_sec, "I2C", f"{m.group(2)} Condition")
             return
 
+        # UART
         m = RE_UART_BYTE.match(line)
         if m:
-            val = int(m.group(1), 16)
+            hw_time_sec = int(m.group(1)) / 1_000_000.0
+            val = int(m.group(2), 16)
             self.packet_counts["UART"] += 1
             self._append_byte_bits("UART", val)
-            self.add_log_row("UART", f"0x{m.group(1)} ('{m.group(2)}')")
+            self.add_log_row(hw_time_sec, "UART", f"0x{m.group(2)} ('{m.group(3)}')")
             self.draw_graph()
             return
 
         m = RE_UART_ERR.match(line)
         if m:
+            hw_time_sec = int(m.group(1)) / 1_000_000.0
             self.error_count += 1
-            self.add_log_row("UART", line, tag="ERR")
+            self.add_log_row(hw_time_sec, "UART", line.split(",", 1)[1], tag="ERR")
             return
 
+        # CAN
         m = RE_CAN_FRAME.match(line)
         if m:
-            status = m.group(5)
+            hw_time_sec = int(m.group(1)) / 1_000_000.0
+            status = m.group(6)
             self.packet_counts["CAN"] += 1
             if status == "ERROR":
                 self.error_count += 1
-            # Scale the CAN ID into a 0-255 range just for graph placement
-            val = int(m.group(1), 16) % 256
+
+            val = int(m.group(2), 16) % 256
             self._append_byte_bits("CAN", val)
             self.add_log_row(
+                hw_time_sec,
                 "CAN",
-                f"ID: 0x{m.group(1)} | DLC: {m.group(2)} | CRC {m.group(3)}/{m.group(4)} [{status}]",
+                f"ID: 0x{m.group(2)} | DLC: {m.group(3)} | CRC {m.group(4)}/{m.group(5)} [{status}]",
                 tag=None if status == "VALID" else "ERR",
             )
             self.draw_graph()

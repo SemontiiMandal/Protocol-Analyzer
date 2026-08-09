@@ -12,7 +12,11 @@ volatile bool is_capturing = false;
 extern struct k_sem capture_semaphore;
 
 void stream_packet_to_pc(const char* packet) {
-    printk("%s\n", packet);
+   // Capture hardware time
+    uint32_t timestamp_us = k_ticks_to_us_floor32(k_cycle_get_32());
+    
+    //  Prepend the timestamp, add a comma delimiter, then send packet so that timestamps are more accurate and don't suffer from os level serial buffering timestamps lose precision 
+    printk("%lu,%s\n", timestamp_us, packet);
 }
 
 // Listen to UART commands from the onboard USB-to-UART bridge
