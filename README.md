@@ -1,8 +1,6 @@
-## Cypher logic and protocol analyzer
+## Cypher - Protocol Analyzer
 
-Cypher is an open-source hardware logic analyzer for embedded systems. It captures digital signals, decodes common communication protocols in real time, and displays the results in a Python desktop application.
-
-I designed the hardware and firmware from the ground up and validate Cypher against a Saleae logic analyzer to compare decoded data directly against the physical wire.
+Cypher is an open-source hardware logic analyzer for embedded systems. It captures digital signals, decodes common communication protocols in real time, and displays the results in a Python desktop application. I designed the hardware and firmware from the ground up and validate Cypher against a Saleae logic analyzer to compare decoded data directly against the physical wire.
 
 ## Assembled Cypher
 <img width="342" height="512" alt="image" src="https://github.com/user-attachments/assets/5a24ad59-41bc-45e7-9e92-424feee6e0dd" />
