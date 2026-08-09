@@ -9,6 +9,16 @@ I designed the hardware and firmware from the ground up and validate Cypher agai
 
 *An image showing the assembled Cypher PCB (Printed Circuit Board); ESP32 slots into the female headers along the edges. Male headers on the top are the logic analyzer input channels for probing target communication protocols*
 
+## Interface and visualization
+
+<img width="1600" height="467" alt="image" src="https://github.com/user-attachments/assets/335a177a-5c86-487f-8c5d-9ef38061cfaa" />
+
+*The Cypher desktop interface displaying live hardware controls alongside toggling digital waveforms.*
+
+<img width="1600" height="846" alt="image" src="https://github.com/user-attachments/assets/e42b4fb8-c683-498c-b3f2-8628cee19bfe" />
+
+*Real-time terminal data stream printing the decoded protocol packets directly from the hardware.*
+
 ## Architecture
 
 Cypher uses an 8-bit parallel capture architecture:
@@ -47,7 +57,7 @@ Zephyr Parser Thread
 
 ```
 
-### Data pipeline
+## Data pipeline
 
 To eliminate CPU bottlenecks during high-speed sampling, Cypher uses a hardware-accelerated data pipeline running on Zephyr RTOS.
 
@@ -57,7 +67,7 @@ A high-priority Zephyr RTOS thread polls the hardware DMA write pointer. When ne
 
 This separation of signal acquisition and protocol decoding allows the hardware to capture multiple protocols from the exact same sample stream.
 
-### Decoder state machines
+## Decoder state machines
 
 The decoders are independent C state machines. They do not use external libraries. They process the raw bitstream tick-by-tick to reconstruct the original data frames.
 
@@ -103,15 +113,15 @@ The Python application provides:
 
 ---
 
-## Interface and visualization
+## Timing and synchronization
 
-<img width="1600" height="467" alt="image" src="https://github.com/user-attachments/assets/335a177a-5c86-487f-8c5d-9ef38061cfaa" />
+Previously, the Python app timestamped packets using `time.time()`. This caused timing inaccuracies because OS buffers and USB polling group serial data into batches, hiding the true bus timing.
 
-*The Cypher desktop interface displaying live hardware controls alongside toggling digital waveforms.*
+Timekeeping now happens on the hardware. The Zephyr RTOS cycle counter generates a microsecond timestamp the moment a frame is decoded. The ESP32 prepends this time to the serial payload (e.g., `1450233,[SPI] MOSI: 0xAA | MISO: 0xBB`). This gives the desktop app the exact physical timing and ignores USB latency.
 
-<img width="1600" height="846" alt="image" src="https://github.com/user-attachments/assets/e42b4fb8-c683-498c-b3f2-8628cee19bfe" />
+<img width="959" height="242" alt="image" src="https://github.com/user-attachments/assets/16ca4407-057a-4957-8d6f-333ff9530344" />
 
-*Real-time terminal data stream printing the decoded protocol packets directly from the hardware.*
+*Data logged with timestamps.*
 
 ## Validation
 
@@ -142,10 +152,7 @@ Test patterns verify decoded bytes, bit ordering, protocol timing, frame boundar
 * [x] Multi-protocol capture
 * [x] Python desktop application
 * [x] Saleae validation
-* [ ] Timestamped raw-edge capture
-* [ ] Zoomable waveform viewer
-* [ ] Hardware triggering
-* [ ] Pre-trigger capture
+* [ ] Hardware timestamping
 * [ ] Wireless protocol capture
 
 ## Tech stack
