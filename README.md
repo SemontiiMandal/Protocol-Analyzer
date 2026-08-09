@@ -1,71 +1,155 @@
-# Cypher - Protocol analyzer 
+## Cypher logic and protocol analyzer
 
-This is an open-source hardware tool that reads and displays embedded communication protocols. It gives developers a cheap way to test hardware. I test this firmware against a Saleae logic analyzer to make sure the bytes match exactly on the physical wire.
+Cypher is an open-source hardware logic analyzer for embedded systems. It captures digital signals, decodes common communication protocols in real time, and displays the results in a Python desktop application.
+
+I designed the hardware and firmware from the ground up and validate Cypher against a Saleae logic analyzer to compare decoded data directly against the physical wire.
 
 ## Assembled Cypher
 <img width="342" height="512" alt="image" src="https://github.com/user-attachments/assets/5a24ad59-41bc-45e7-9e92-424feee6e0dd" />
 
-*And image showing the assembled Cypher PCB (Printed Circuit Board)*
+*An image showing the assembled Cypher PCB (Printed Circuit Board); ESP32 slots into the female headers along the edges. Male headers on the top are the logic analyzer input channels for probing target communication protocols*
 
+## Architecture
 
-## Current status
+Cypher uses an 8-bit parallel capture architecture:
 
-The project uses an 8-bit matrix architecture running on Zephyr RTOS.
+```text
+Target Bus
+    │
+    ▼
+Input Protection / Level Shifting
+    │
+    ▼
+ESP32 GPIO Matrix
+    │
+    ▼
+8-bit Parallel Capture
+    │
+    ▼
+I2S + DMA
+    │
+    ▼
+SRAM Ring Buffer
+    │
+    ▼
+Zephyr Parser Thread
+    │
+    ├── SPI Decoder
+    ├── I2C Decoder
+    ├── UART Decoder
+    └── CAN Decoder
+            │
+            ▼
+      Serial Stream
+            │
+            ▼
+    Python Desktop App
 
-* DMA capture records data to a continuous ring buffer without using the CPU.
-* The firmware supports SPI, I2C, UART, and CAN.
-* The ESP32-C6 can route up to 8 pins at the same time to read multiple protocols on one bus.
-* A Python app controls the hardware over a virtual USB CDC connection.
+```
 
-## How it works
+### Data pipeline
 
-The firmware processes data in five steps.
+To eliminate CPU bottlenecks during high-speed sampling, Cypher uses a hardware-accelerated data pipeline running on Zephyr RTOS.
 
-1. You send a one-byte ASCII command from the Python app over USB.
-2. The Zephyr USB interrupt catches the command and tells the ESP32-C6 GPIO matrix to route the physical pins into an internal 8-bit parallel bus.
-3. The hardware DMA engine continuously copies data from that bus into a 100 KB SRAM ring buffer. The CPU does not do any of this work.
-4. An RTOS thread reads the ring buffer right behind the DMA write head. It uses bitmasks to separate the 8-bit chunks into specific slots based on the mode you chose.
-5. The isolated bits go into C state machines. These decoders track timing and edges to read the bytes, handle CAN bit-stuffing, calculate CRCs, and send text back to your computer.
+The ESP32 I2S peripheral runs in 8-bit parallel mode. It captures the physical pin states and pushes them directly into a 100 KB SRAM circular buffer using DMA. This process uses zero CPU cycles.
 
-## Project roadmap
+A high-priority Zephyr RTOS thread polls the hardware DMA write pointer. When new data is available, the thread reads the raw 8-bit snapshots, applies a bitwise XOR to reverse the byte order (handling an ESP32 I2S memory alignment quirk), and uses bitmasks to extract the individual pin states. It feeds these isolated 1s and 0s into the protocol decoders one tick at a time.
+
+This separation of signal acquisition and protocol decoding allows the hardware to capture multiple protocols from the exact same sample stream.
+
+### Decoder state machines
+
+The decoders are independent C state machines. They do not use external libraries. They process the raw bitstream tick-by-tick to reconstruct the original data frames.
+
+* **SPI:** Synchronous and edge-driven. The state machine waits for the Chip Select (CS) pin to go low. It monitors the clock pin (CLK) and shifts the MOSI and MISO bits into a temporary buffer on the active clock edge. After 8 bits, it outputs the completed byte and waits for the next edge.
+* **I2C:** Edge and level-driven. It monitors the data line (SDA) while the clock (SCL) is high to catch START and STOP conditions. Once started, it shifts 8 data bits on the clock edges and captures the 9th bit to evaluate the ACK/NACK handshake.
+* **UART:** Asynchronous and time-driven. It relies on an oversampling counter. When it detects a start bit (a falling edge on the RX pin), it waits half a bit period to center the sample. It then reads the bus at fixed intervals based on the configured baud rate to extract the frame and stop bit.
+* **CAN 2.0:** Asynchronous and edge-synchronized. The decoder watches for a Start of Frame (SOF) dominant bit. It tracks consecutive identical bits to identify and discard hardware-injected stuffing bits. It parses the Arbitration ID and Data Length Code (DLC), shifts the payload bytes, and computes a running CRC-15. It only forwards the packet to the Python app if the calculated CRC matches the checksum read from the physical wire.
 
 ## Custom hardware
-I designed a custom printed circuit board (PCB) in Altium Designer to run this logic analyzer. I call it Cypher!
+
+I designed the Cypher PCB in Altium Designer.
 
 <img width="236" height="314" alt="image" src="https://github.com/user-attachments/assets/c648626c-3d74-43cc-a0d7-1440084c12c6" />
 <img width="257" height="323" alt="image" src="https://github.com/user-attachments/assets/0844408f-6a54-41da-a868-507184612aad" />
 <img width="245" height="308" alt="image" src="https://github.com/user-attachments/assets/326d12cb-f893-461a-8281-2c52773697d6" />
 
+The main components are:
 
-**Microcontroller**
+* ESP32: Handles parallel digital capture, GPIO routing, DMA, and future wireless capabilities.
+* SN74LVC8T245: An 8-bit level translator that interfaces with higher-voltage target hardware.
+* TCAN1051HV: The CAN physical-layer transceiver.
 
-The board uses the ESP32-C6. I chose this chip for three reasons:
+## Protocol support
 
-* Parallel IO (PARLIO): The chip can sample 8 pins at the exact same time and dump that data straight into the DMA ring buffer; Current Data Bus is 8 Bit Wide.
-* Native USB: The chip has built-in USB routing. This kept the schematic simple because I did not need an external USB-to-serial converter.
-* Wireless radios: It includes native Wi-Fi and Bluetooth for future wireless sniffing.
+* [x] SPI: Clock-edge synchronous decoder.
+* [x] I2C: Edge-driven decoder with start and stop detection.
+* [x] UART: Asynchronous state-machine decoder.
+* [x] CAN 2.0: Bit-stuffing removal and CRC-15 verification.
+* [x] Multi-protocol capture: Up to 8 simultaneous digital lanes.
+* [ ] Wireless: Planned.
 
-**Level shifter**
+## Desktop application
 
-The ESP32-C6 operates strictly at 3.3V. If you probe a 5V target board, you will destroy the microcontroller. To prevent this, the board includes an SN74LVC8T245 8-bit level shifter. It reads the reference voltage from the target board and safely drops the incoming logic signals down to 3.3V before they reach the ESP32-C6 parallel bus.
+The Python application provides:
 
-**CAN transceiver**
+* Hardware connection and capture control
+* Protocol configuration
+* Live decoded packet log
+* Digital waveform visualization
+* Capture statistics and error tracking
+* Raw serial console
+* CSV export
 
-A microcontroller cannot read raw CAN bus signals directly because the differential voltages are too high. The board includes a TCAN1051HV transceiver. It sits between the external probe connector and the ESP32-C6 to convert the raw CAN bus voltages into safe, standard digital logic.
+---
 
-### Protocol expansion
+## Interface and visualization
 
-* [x] UART / Serial: Asynchronous time-driven decoding.
-* [x] I2C: Synchronous edge-driven decoding with start and stop conditions.
-* [x] SPI: High-speed synchronous data capture.
-* [x] CAN 2.0: Asynchronous decoding with bit-stuffing removal and CRC-15 verification.
-* [ ] Wireless: Using the ESP32 radio to sniff wireless packets.
+<img width="1600" height="467" alt="image" src="https://github.com/user-attachments/assets/335a177a-5c86-487f-8c5d-9ef38061cfaa" />
 
-## Testbench setup
+*The Cypher desktop interface displaying live hardware controls alongside toggling digital waveforms.*
 
-* Target: Embedded hardware broadcasting test patterns.
-* Sniffer: ESP32-C6 DevKit running Zephyr RTOS.
-* Interface: Python desktop application.
-* Ground truth: Saleae logic analyzer.
+<img width="1600" height="846" alt="image" src="https://github.com/user-attachments/assets/e42b4fb8-c683-498c-b3f2-8628cee19bfe" />
 
-*Note: This repository is a work in progress. I am making updates to this weekly!*
+*Real-time terminal data stream printing the decoded protocol packets directly from the hardware.*
+
+## Validation
+
+Cypher is tested against a Saleae logic analyzer using the same physical signals.
+
+```text
+                 Target Hardware
+                  /          \
+                 /            \
+            Cypher           Saleae
+               │                │
+               ▼                ▼
+          Cypher Decode    Saleae Decode
+               │                │
+               └───────┬────────┘
+                       ▼
+                 Compare Results
+
+```
+
+Test patterns verify decoded bytes, bit ordering, protocol timing, frame boundaries, and error detection.
+
+## Roadmap
+
+* [x] Custom hardware
+* [x] DMA-based 8-bit capture
+* [x] SPI, I2C, UART, and CAN decoding
+* [x] Multi-protocol capture
+* [x] Python desktop application
+* [x] Saleae validation
+* [ ] Timestamped raw-edge capture
+* [ ] Zoomable waveform viewer
+* [ ] Hardware triggering
+* [ ] Pre-trigger capture
+* [ ] Wireless protocol capture
+
+## Tech stack
+
+* Firmware: C, Zephyr RTOS, ESP32, I2S, DMA, GPIO Matrix
+* Hardware: Altium Designer, custom PCB, SN74LVC8T245, TCAN1051HV
+* Desktop: Python, Tkinter, PySerial
